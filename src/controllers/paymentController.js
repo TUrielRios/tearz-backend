@@ -31,4 +31,18 @@ const webhook = asyncHandler(async (req, res) => {
   });
 });
 
-module.exports = { createPayment, webhook };
+/**
+ * Manually verify order payment status (fallback)
+ * GET /api/payments/verify/:orderId
+ */
+const verifyPayment = asyncHandler(async (req, res) => {
+  const { orderId } = req.params;
+  const result = await paymentService.verifyPayment(orderId);
+
+  res.status(200).json({
+    success: true,
+    data: result,
+  });
+});
+
+module.exports = { createPayment, webhook, verifyPayment };

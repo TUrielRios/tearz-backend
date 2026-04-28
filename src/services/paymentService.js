@@ -239,6 +239,67 @@ class PaymentService {
       throw error;
     }
   }
+
+  /**
+   * Manually verify a payment status for an order
+   * Useful as a fallback if webhooks are delayed
+   */
+  async verifyPayment(orderId) {
+    const payment = await Payment.findOne({ where: { orderId } });
+    if (!payment || !payment.externalId) {
+      throw ApiError.notFound('No se encontró un intento de pago para esta orden');
+    }
+
+    // If already approved, just return it
+    if (payment.status === 'approved') {
+      return { status: 'approved' };
+    }
+
+    try {
+      const mpPaymentClient = new MPPayment(mpClient);
+      
+      // Try to find the payment by external_reference in MP
+      const searchResponse = await mpPaymentClient.search({
+        qs: { external_reference: orderId }
+      });
+
+      const mpPayment = searchResponse.results?.[0];
+
+      if (!mpPayment) {
+        return { status: 'not_found' };
+      }
+
+      console.log(`🔍 Verificación manual para orden ${orderId}:`, mpPayment.status);
+
+      const statusMap = {
+        approved: 'approved',
+        authorized: 'approved',
+        in_process: 'pending',
+        rejected: 'rejected',
+        cancelled: 'rejected',
+      };
+
+      const newStatus = statusMap[mpPayment.status] || 'pending';
+
+      if (newStatus === 'approved' && payment.status !== 'approved') {
+        // Mark as approved and trigger order processing
+        await payment.update({ status: 'approved', externalId: String(mpPayment.id) });
+        const order = await orderService.processApprovedPayment(orderId);
+        
+        try {
+          await emailService.sendOrderConfirmation(orderId);
+          await emailService.sendAdminNewOrderAlert(orderId);
+        } catch (e) {
+          console.error('Error enviando emails en verificación manual:', e.message);
+        }
+      }
+
+      return { status: newStatus };
+    } catch (error) {
+      console.error('❌ Error en verifyPayment:', error);
+      throw error;
+    }
+  }
 }
 
 module.exports = new PaymentService();

@@ -10,4 +10,7 @@ router.post('/create', auth, paymentController.createPayment);
 // Mercado Pago webhook (no auth — MP calls this)
 router.post('/webhook', paymentController.webhook);
 
+// Manual verification (authenticated user)
+router.get('/verify/:orderId', auth, paymentController.verifyPayment);
+
 module.exports = router;
