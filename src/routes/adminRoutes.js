@@ -3,6 +3,7 @@ const auth = require('../middlewares/auth');
 const admin = require('../middlewares/admin');
 const adminController = require('../controllers/adminController');
 const siteContentController = require('../controllers/siteContentController');
+const journalController = require('../controllers/journalController');
 const uploadController = require('../controllers/uploadController');
 const { upload } = require('../config/cloudinary');
 
@@ -25,6 +26,13 @@ router.post('/orders/:id/ship', adminController.shipOrder);
 router.get('/site-content', siteContentController.getAll);
 router.get('/site-content/:key', siteContentController.getByKey);
 router.put('/site-content', siteContentController.upsert);
+
+// Journal Posts
+router.get('/journals', journalController.listAll);
+router.get('/journals/:id', journalController.getById);
+router.post('/journals', journalController.create);
+router.put('/journals/:id', journalController.update);
+router.delete('/journals/:id', journalController.remove);
 
 // Image upload (Cloudinary)
 router.post('/upload', upload.array('images', 10), uploadController.uploadImages);

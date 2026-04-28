@@ -7,6 +7,7 @@ const OrderItem = require('./OrderItem');
 const Payment = require('./Payment');
 const Coupon = require('./Coupon');
 const SiteContent = require('./SiteContent');
+const JournalPost = require('./JournalPost');
 
 // ─── Associations ────────────────────────────────────────
 
@@ -44,4 +45,5 @@ module.exports = {
   Payment,
   Coupon,
   SiteContent,
+  JournalPost,
 };
