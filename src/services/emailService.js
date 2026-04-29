@@ -42,7 +42,9 @@ class EmailService {
       return result;
     } catch (error) {
       console.error(`❌ Error enviando email a ${to}:`, error.message);
-      console.error(`   Detalles:`, error.code, error.response?.message || 'No response');
+      console.error(`   Código de error:`, error.code);
+      console.error(`   Respuesta completa:`, JSON.stringify(error.response || error, null, 2));
+      // No lanzamos error para no bloquear el flujo principal
       return { error: error.message };
     }
   }
