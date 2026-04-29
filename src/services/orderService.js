@@ -253,11 +253,12 @@ class OrderService {
    */
   async processApprovedPayment(orderId) {
     const transaction = await sequelize.transaction();
+
     try {
+      // Lock the order first (no joins to avoid FOR UPDATE on outer join)
       const order = await Order.findByPk(orderId, {
-        include: [{ model: OrderItem, as: 'items' }],
         transaction,
-        lock: transaction.LOCK.UPDATE
+        lock: true, // SELECT ... FOR UPDATE
       });
 
       if (!order) {
@@ -267,12 +268,25 @@ class OrderService {
 
       // If already paid, no need to process again
       if (order.status === 'paid') {
+        await transaction.commit();
         console.log(`⚠️ Orden ${orderId} ya estaba marcada como PAID - omitiendo`);
-        await transaction.rollback();
         return order;
       }
+
+      // Load order items separately (within same transaction)
+      const items = await OrderItem.findAll({
+        where: { orderId },
+        transaction,
+        lock: true,
+      });
+
+      if (!items || items.length === 0) {
+        await transaction.rollback();
+        throw ApiError.badRequest('La orden no tiene ítems');
+      }
+
       // Decrement stock
-      for (const item of order.items) {
+      for (const item of items) {
         const [affectedRows] = await Product.update(
           { stock: sequelize.literal(`stock - ${item.quantity}`) },
           {

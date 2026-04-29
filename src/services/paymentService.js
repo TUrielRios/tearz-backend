@@ -88,6 +88,8 @@ class PaymentService {
     const frontendUrl = config.cors.frontendUrl || 'http://localhost:5173';
     const backendUrl = config.backendUrl || 'http://localhost:3001';
 
+    const isLocal = frontendUrl.includes('localhost');
+
     const preferenceData = {
       body: {
         items,
@@ -96,8 +98,9 @@ class PaymentService {
           failure: `${frontendUrl}/checkout/failure?order=${order.id}`,
           pending: `${frontendUrl}/checkout/pending?order=${order.id}`,
         },
-        auto_return: 'approved',
-        notification_url: backendUrl.includes('localhost') ? undefined : `${backendUrl}/api/payments/webhook`,
+        // Solo activamos auto_return si no es localhost o si no estamos en producción
+        auto_return: isLocal && config.mp.isProd ? undefined : 'approved',
+        notification_url: isLocal ? undefined : `${backendUrl}/api/payments/webhook`,
         external_reference: order.id,
         statement_descriptor: 'TEARZ 1874',
       },
