@@ -9,19 +9,33 @@ class EmailService {
 
   getTransporter() {
     if (this.transporter) return this.transporter;
+
     if (!config.email.user || !config.email.password) {
       console.warn('⚠️ Email no configurado — emails no se enviarán');
       console.warn('   Variables requeridas: EMAIL_USER, EMAIL_PASSWORD');
       return null;
     }
-    console.log('📧 Configurando transporter de email (Gmail)...');
+
+    console.log(`📧 Configurando transporter de email para ${config.email.host}:${config.email.port}...`);
+    
     this.transporter = nodemailer.createTransport({
-      service: 'gmail',
+      host: config.email.host,
+      port: config.email.port,
+      secure: config.email.port === 465,
       auth: {
         user: config.email.user,
         pass: config.email.password,
       },
+      tls: {
+        // No fallar por certificados auto-firmados en algunos entornos
+        rejectUnauthorized: false
+      },
+      // Timeouts para evitar que el proceso se quede colgado indefinidamente
+      connectionTimeout: 10000, // 10s
+      greetingTimeout: 10000,   // 10s
+      socketTimeout: 30000      // 30s
     });
+
     return this.transporter;
   }
 
@@ -31,20 +45,27 @@ class EmailService {
       console.log(`📧 [SIMULADO] Email a ${to}: ${subject}`);
       return { simulated: true };
     }
+
+    console.log(`📧 [send] Intentando enviar a ${to}...`);
+    
     try {
+      const startTime = Date.now();
       const result = await transporter.sendMail({
         from: `"Tearz 1874!" <${config.email.from || config.email.user}>`,
         to,
         subject,
         html,
       });
-      console.log(`📧 Email enviado exitosamente a ${to}: ${subject}`);
+      const duration = ((Date.now() - startTime) / 1000).toFixed(2);
+      console.log(`✅ Email enviado exitosamente a ${to} (${duration}s): ${subject}`);
       return result;
     } catch (error) {
       console.error(`❌ Error enviando email a ${to}:`, error.message);
+      if (error.code === 'EAUTH') {
+        console.error('   👉 Tip: Verifica que EMAIL_USER y EMAIL_PASSWORD sean correctos.');
+        console.error('   👉 Tip: Si usas Gmail, recuerda que debes usar una "Contraseña de Aplicación" si tienes 2FA activado.');
+      }
       console.error(`   Código de error:`, error.code);
-      console.error(`   Respuesta completa:`, JSON.stringify(error.response || error, null, 2));
-      // No lanzamos error para no bloquear el flujo principal
       return { error: error.message };
     }
   }

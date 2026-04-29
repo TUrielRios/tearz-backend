@@ -252,21 +252,25 @@ class OrderService {
    * Also sends confirmation emails to customer and admin alert
    */
   async processApprovedPayment(orderId) {
-    const order = await Order.findByPk(orderId, {
-      include: [{ model: OrderItem, as: 'items' }],
-    });
-
-    if (!order) throw ApiError.notFound('Orden no encontrada');
-
-    // If already paid, no need to process again
-    if (order.status === 'paid') {
-      console.log(`⚠️ Orden ${orderId} ya estaba marcada como PAID - omitiendo`);
-      return order;
-    }
-
     const transaction = await sequelize.transaction();
-
     try {
+      const order = await Order.findByPk(orderId, {
+        include: [{ model: OrderItem, as: 'items' }],
+        transaction,
+        lock: transaction.LOCK.UPDATE
+      });
+
+      if (!order) {
+        await transaction.rollback();
+        throw ApiError.notFound('Orden no encontrada');
+      }
+
+      // If already paid, no need to process again
+      if (order.status === 'paid') {
+        console.log(`⚠️ Orden ${orderId} ya estaba marcada como PAID - omitiendo`);
+        await transaction.rollback();
+        return order;
+      }
       // Decrement stock
       for (const item of order.items) {
         const [affectedRows] = await Product.update(
