@@ -15,6 +15,9 @@ router.use(auth, admin);
 // Dashboard
 router.get('/dashboard', adminController.getDashboard);
 
+// Test email
+router.get('/test-email', adminController.testEmail);
+
 // Customers
 router.get('/customers', adminController.getCustomers);
 

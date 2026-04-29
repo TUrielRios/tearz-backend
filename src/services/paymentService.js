@@ -2,7 +2,6 @@ const { MercadoPagoConfig, Preference, Payment: MPPayment } = require('mercadopa
 const config = require('../config');
 const { Payment, Order, OrderItem, Product } = require('../models');
 const orderService = require('./orderService');
-const emailService = require('./emailService');
 const ApiError = require('../utils/ApiError');
 
 // Initialize Mercado Pago client
@@ -210,24 +209,9 @@ class PaymentService {
 
       // 5. Process based on status
       if (newStatus === 'approved') {
-        // Decrement stock and mark order as paid
+        // Decrement stock, mark order as paid, and send emails
         const order = await orderService.processApprovedPayment(orderId);
-
-        // Send confirmation email to CUSTOMER
-        try {
-          await emailService.sendOrderConfirmation(orderId);
-        } catch (emailError) {
-          console.error('⚠️ Error enviando email de confirmación:', emailError.message);
-        }
-
-        // Send alert email to ADMIN so they can dispatch manually
-        try {
-          await emailService.sendAdminNewOrderAlert(orderId);
-        } catch (emailError) {
-          console.error('⚠️ Error enviando alerta al admin:', emailError.message);
-        }
-
-        console.log(`✅ Orden ${orderId} marcada como PAID`);
+        console.log(`✅ Orden ${orderId} procesada correctamente`);
       } else if (newStatus === 'rejected') {
         await Order.update({ status: 'cancelled' }, { where: { id: orderId } });
         console.log(`❌ Orden ${orderId} cancelada por pago rechazado`);
@@ -282,16 +266,9 @@ class PaymentService {
       const newStatus = statusMap[mpPayment.status] || 'pending';
 
       if (newStatus === 'approved' && payment.status !== 'approved') {
-        // Mark as approved and trigger order processing
+        // Mark as approved and trigger order processing (includes emails)
         await payment.update({ status: 'approved', externalId: String(mpPayment.id) });
         const order = await orderService.processApprovedPayment(orderId);
-        
-        try {
-          await emailService.sendOrderConfirmation(orderId);
-          await emailService.sendAdminNewOrderAlert(orderId);
-        } catch (e) {
-          console.error('Error enviando emails en verificación manual:', e.message);
-        }
       }
 
       return { status: newStatus };

@@ -1,7 +1,9 @@
 const { Order, OrderItem, Product, User, Category, Payment } = require('../models');
 const orderService = require('../services/orderService');
+const emailService = require('../services/emailService');
 const { asyncHandler } = require('../utils/helpers');
 const { Op, fn, col, literal } = require('sequelize');
+const config = require('../config');
 
 /**
  * Dashboard stats — total orders, revenue, products, customers, low stock
@@ -178,5 +180,76 @@ const shipOrder = asyncHandler(async (req, res) => {
   });
 });
 
-module.exports = { getDashboard, getCustomers, getAllOrders, shipOrder };
+/**
+ * Test email configuration
+ * GET /api/admin/test-email?to=...&type=...
+ */
+const testEmail = asyncHandler(async (req, res) => {
+  const { to, type = 'test' } = req.query;
+  const testTo = to || config.admin.email || config.email.user;
+
+  if (!testTo) {
+    return res.status(400).json({
+      success: false,
+      message: 'No hay email configurado. Configure ADMIN_EMAIL o EMAIL_USER en .env'
+    });
+  }
+
+  let subject, html;
+  const now = new Date().toLocaleString('es-AR');
+
+  switch (type) {
+    case 'order_confirm':
+      subject = `✅ [TEST] Confirmación de compra — ${now}`;
+      html = `
+        <div style="font-family:Helvetica,Arial,sans-serif;max-width:600px;margin:auto;padding:20px;">
+          <h1 style="color:#22c55e;">Prueba de Email – Confirmación de Orden</h1>
+          <p>Este es un <strong>email de prueba</strong> del sistema Tearz 1874.</p>
+          <p>Si recibís este email, la configuración de email funciona correctamente.</p>
+          <hr>
+          <p><small>Enviado desde: ${config.backendUrl}</small></p>
+        </div>`;
+      break;
+    case 'admin_alert':
+      subject = `🚨 [TEST] Alerta de Nueva Orden — ${now}`;
+      html = `
+        <div style="font-family:Helvetica,Arial,sans-serif;max-width:600px;margin:auto;padding:20px;">
+          <h1 style="color:#dc2626;">Prueba de Email – Alerta a Admin</h1>
+          <p>Este es un <strong>email de prueba</strong> de alerta de nueva orden pagada.</p>
+          <p>El admin debería recibir esto cuando un cliente completa un pago.</p>
+          <hr>
+          <p><small>Enviado desde: ${config.backendUrl}</small></p>
+        </div>`;
+      break;
+    case 'shipping':
+      subject = `🚚 [TEST] Notificación de Envío — ${now}`;
+      html = `
+        <div style="font-family:Helvetica,Arial,sans-serif;max-width:600px;margin:auto;padding:20px;">
+          <h1 style="color:#2563eb;">Prueba de Email – Orden Enviada</h1>
+          <p>Este es un <strong>email de prueba</strong> notificando que la orden fue despachada.</p>
+          <p>Incluye código de tracking y enlace a Andreani.</p>
+          <hr>
+          <p><small>Enviado desde: ${config.backendUrl}</small></p>
+        </div>`;
+      break;
+    default:
+      subject = `📧 [TEST] Email de prueba — ${now}`;
+      html = `
+        <div style="font-family:Helvetica,Arial,sans-serif;max-width:600px;margin:auto;padding:20px;">
+          <h1>Email de prueba – Tearz 1874!</h1>
+          <p>Si ves este email, la configuración de correo funciona correctamente.</p>
+          <p><strong>No es una notificación real.</strong></p>
+        </div>`;
+  }
+
+  const result = await emailService.send({ to: testTo, subject, html });
+
+  res.json({
+    success: true,
+    message: 'Email de prueba enviado (o simulado)',
+    data: { to: testTo, subject, result },
+  });
+});
+
+module.exports = { getDashboard, getCustomers, getAllOrders, shipOrder, testEmail };
 

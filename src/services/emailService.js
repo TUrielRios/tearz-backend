@@ -11,13 +11,16 @@ class EmailService {
     if (this.transporter) return this.transporter;
     if (!config.email.user || !config.email.password) {
       console.warn('⚠️ Email no configurado — emails no se enviarán');
+      console.warn('   Variables requeridas: EMAIL_USER, EMAIL_PASSWORD');
       return null;
     }
+    console.log('📧 Configurando transporter de email (Gmail)...');
     this.transporter = nodemailer.createTransport({
-      host: config.email.host,
-      port: config.email.port,
-      secure: config.email.port === 465,
-      auth: { user: config.email.user, pass: config.email.password },
+      service: 'gmail',
+      auth: {
+        user: config.email.user,
+        pass: config.email.password,
+      },
     });
     return this.transporter;
   }
@@ -30,21 +33,23 @@ class EmailService {
     }
     try {
       const result = await transporter.sendMail({
-        from: `"Tearz 1874!" <${config.email.from}>`,
+        from: `"Tearz 1874!" <${config.email.from || config.email.user}>`,
         to,
         subject,
         html,
       });
-      console.log(`📧 Email enviado a ${to}: ${subject}`);
+      console.log(`📧 Email enviado exitosamente a ${to}: ${subject}`);
       return result;
     } catch (error) {
       console.error(`❌ Error enviando email a ${to}:`, error.message);
-      throw error;
+      console.error(`   Detalles:`, error.code, error.response?.message || 'No response');
+      return { error: error.message };
     }
   }
 
   /** Send order confirmation to CUSTOMER after payment approved */
   async sendOrderConfirmation(orderId) {
+    console.log(`📦 [sendOrderConfirmation] Intentando enviar email de confirmación para orden ${orderId}`);
     const order = await Order.findByPk(orderId, {
       include: [
         { model: User, as: 'user' },
@@ -55,7 +60,19 @@ class EmailService {
         },
       ],
     });
-    if (!order || !order.user) return;
+    if (!order) {
+      console.log(`❌ [sendOrderConfirmation] Orden ${orderId} no encontrada`);
+      return;
+    }
+    if (!order.user) {
+      console.log(`❌ [sendOrderConfirmation] Orden ${orderId} sin usuario asociado (userId: ${order.userId})`);
+      return;
+    }
+    if (!order.user.email) {
+      console.log(`❌ [sendOrderConfirmation] Usuario ${order.user.id} sin email configurado`);
+      return;
+    }
+    console.log(`📧 [sendOrderConfirmation] Enviando a cliente: ${order.user.email} (orden ${orderId})`);
 
     const itemsHtml = (order.items || []).map((item) => `
       <tr>
@@ -122,7 +139,11 @@ class EmailService {
    */
   async sendAdminNewOrderAlert(orderId) {
     const adminEmail = config.admin.email || config.email.user;
-    if (!adminEmail) return;
+    console.log(`📧 [sendAdminNewOrderAlert] Orden ${orderId}, adminEmail: ${adminEmail}`);
+    if (!adminEmail) {
+      console.log(`❌ [sendAdminNewOrderAlert] No hay adminEmail configurado en .env`);
+      return;
+    }
 
     const order = await Order.findByPk(orderId, {
       include: [
@@ -134,7 +155,10 @@ class EmailService {
         },
       ],
     });
-    if (!order) return;
+    if (!order) {
+      console.log(`❌ [sendAdminNewOrderAlert] Orden ${orderId} no encontrada`);
+      return;
+    }
 
     const itemsList = (order.items || []).map((i) =>
       `&#8226; ${i.product?.name || 'Producto'} x${i.quantity}${i.size ? ` (Talle: ${i.size})` : ''}`
@@ -186,6 +210,7 @@ class EmailService {
    * Notify CUSTOMER that their order was shipped, with Andreani tracking code
    */
   async sendShippingNotification(orderId) {
+    console.log(`📦 [sendShippingNotification] Intentando enviar email de envío para orden ${orderId}`);
     const order = await Order.findByPk(orderId, {
       include: [
         { model: User, as: 'user' },
@@ -196,7 +221,19 @@ class EmailService {
         },
       ],
     });
-    if (!order || !order.user) return;
+    if (!order) {
+      console.log(`❌ [sendShippingNotification] Orden ${orderId} no encontrada`);
+      return;
+    }
+    if (!order.user) {
+      console.log(`❌ [sendShippingNotification] Orden ${orderId} sin usuario asociado`);
+      return;
+    }
+    if (!order.user.email) {
+      console.log(`❌ [sendShippingNotification] Usuario ${order.user.id} sin email`);
+      return;
+    }
+    console.log(`📧 [sendShippingNotification] Enviando a cliente: ${order.user.email} (orden ${orderId})`);
 
     const trackingCode = order.trackingCode;
     const trackingSection = trackingCode ? `
@@ -260,7 +297,10 @@ class EmailService {
     const order = await Order.findByPk(orderId, {
       include: [{ model: User, as: 'user' }],
     });
-    if (!order || !order.user) return;
+    if (!order || !order.user) {
+      console.log(`❌ [sendOrderStatusUpdate] Orden ${orderId} no encontrada o sin usuario`);
+      return;
+    }
 
     const statusLabels = {
       pending: { label: 'Pendiente', emoji: '⏳', color: '#f59e0b' },
@@ -313,7 +353,10 @@ class EmailService {
         },
       ],
     });
-    if (!order || !order.user) return;
+    if (!order || !order.user) {
+      console.log(`❌ [sendDeliveryFeedbackRequest] Orden ${orderId} no encontrada o sin usuario`);
+      return;
+    }
 
     const itemsList = (order.items || []).map((i) =>
       `• ${i.product?.name || 'Producto'}${i.size ? ` (Talle: ${i.size})` : ''}`

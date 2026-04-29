@@ -1,6 +1,7 @@
 const { Op } = require('sequelize');
 const sequelize = require('../config/database');
 const { Order, OrderItem, Product, Payment, Coupon } = require('../models');
+const emailService = require('./emailService');
 const ApiError = require('../utils/ApiError');
 const { paginate } = require('../utils/helpers');
 
@@ -248,6 +249,7 @@ class OrderService {
   /**
    * Process approved payment — decrement stock and mark order as paid
    * Idempotent: safe to call multiple times
+   * Also sends confirmation emails to customer and admin alert
    */
   async processApprovedPayment(orderId) {
     const order = await Order.findByPk(orderId, {
@@ -265,6 +267,7 @@ class OrderService {
     const transaction = await sequelize.transaction();
 
     try {
+      // Decrement stock
       for (const item of order.items) {
         const [affectedRows] = await Product.update(
           { stock: sequelize.literal(`stock - ${item.quantity}`) },
@@ -278,16 +281,29 @@ class OrderService {
         );
 
         if (affectedRows === 0) {
-          // Not enough stock — cancel the order
           await transaction.rollback();
           await order.update({ status: 'cancelled' }, { transaction });
           throw ApiError.badRequest(`Stock insuficiente para completar el pago`);
         }
       }
 
+      // Mark as paid
       await order.update({ status: 'paid' }, { transaction });
       await transaction.commit();
 
+      // Send notification emails (outside transaction to avoid blocking order completion)
+      try {
+        await emailService.sendOrderConfirmation(orderId);
+      } catch (emailError) {
+        console.error('⚠️ Error enviando email de confirmación al cliente:', emailError.message);
+      }
+      try {
+        await emailService.sendAdminNewOrderAlert(orderId);
+      } catch (emailError) {
+        console.error('⚠️ Error enviando alerta al admin:', emailError.message);
+      }
+
+      console.log(`✅ Orden ${orderId} marcada como PAID y emails enviados`);
       return order;
     } catch (error) {
       if (transaction.finished !== 'commit') {
