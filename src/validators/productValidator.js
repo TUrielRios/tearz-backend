@@ -12,19 +12,20 @@ const createProductSchema = z.object({
   badge: z.string().nullable().optional(),
   active: z.boolean().default(true),
   categoryId: z.string().uuid().nullable().optional(),
+  sizeStock: z.record(z.string(), z.number()).optional(),
 });
 
 const updateProductSchema = createProductSchema.partial();
 
 const productQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(12),
+  limit: z.coerce.number().int().min(1).max(1000).default(12),
   category: z.string().optional(),
   search: z.string().optional(),
   minPrice: z.coerce.number().min(0).optional(),
   maxPrice: z.coerce.number().min(0).optional(),
   sort: z.enum(['price_asc', 'price_desc', 'newest', 'name_asc']).default('newest'),
-  active: z.coerce.boolean().optional(),
+  active: z.string().optional(), // Changed to string to allow 'all', 'true', 'false'
 });
 
 module.exports = { createProductSchema, updateProductSchema, productQuerySchema };

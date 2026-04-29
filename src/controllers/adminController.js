@@ -96,6 +96,7 @@ const getAllOrders = asyncHandler(async (req, res) => {
 
   const offset = (parseInt(page, 10) - 1) * parseInt(limit, 10);
 
+  console.log('🔍 Fetching orders with where:', where);
   const { count, rows } = await Order.findAndCountAll({
     where,
     include: [
@@ -112,6 +113,8 @@ const getAllOrders = asyncHandler(async (req, res) => {
     distinct: true,
   });
 
+  console.log(`📊 Found ${rows.length} orders (Total count: ${count})`);
+
   // 🔄 Auto-sync: Marcar órdenes pendientes con pago aprobado como 'paid'
   // Esto corrige el caso donde el webhook no llegó pero el pago está aprobado
   const pendingOrders = rows.filter(o => o.status === 'pending' && o.payment?.status === 'approved');
@@ -125,7 +128,11 @@ const getAllOrders = asyncHandler(async (req, res) => {
   }
 
   // Remover el campo payment del resultado para no exponerlo al frontend (opcional)
-  const ordersWithoutPayment = rows.map(({ payment, ...rest }) => rest);
+  const ordersWithoutPayment = rows.map(o => {
+    const plain = o.toJSON();
+    delete plain.payment;
+    return plain;
+  });
 
   res.json({
     success: true,

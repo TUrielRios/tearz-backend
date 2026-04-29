@@ -42,6 +42,10 @@ const Product = sequelize.define('Product', {
     type: DataTypes.JSON,
     defaultValue: [],
   },
+  sizeStock: {
+    type: DataTypes.JSON,
+    defaultValue: {},
+  },
   badge: {
     type: DataTypes.STRING,
     allowNull: true,

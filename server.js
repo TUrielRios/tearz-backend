@@ -8,6 +8,22 @@ const start = async () => {
     await sequelize.authenticate();
     console.log('✅ Conexión a PostgreSQL establecida correctamente');
 
+    // Manual migration for sizeStock column in Products table
+    try {
+      await sequelize.query('ALTER TABLE products ADD COLUMN IF NOT EXISTS size_stock JSON DEFAULT \'{}\';');
+      console.log('✅ Columna size_stock verificada/agregada');
+    } catch (err) {
+      console.error('⚠️ Error agregando columna size_stock:', err.message);
+    }
+
+    // Manual migration for category_ids column in Bundles table
+    try {
+      await sequelize.query('ALTER TABLE bundles ADD COLUMN IF NOT EXISTS category_ids JSON DEFAULT \'[]\';');
+      console.log('✅ Columna category_ids verificada/agregada');
+    } catch (err) {
+      console.error('⚠️ Error agregando columna category_ids:', err.message);
+    }
+
     // Sync models (dev only — en producción usar migraciones)
     if (config.env === 'development') {
       await sequelize.sync({ alter: false });

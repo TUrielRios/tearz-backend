@@ -1,6 +1,6 @@
 const { Op } = require('sequelize');
 const sequelize = require('../config/database');
-const { Order, OrderItem, Product, Payment, Coupon } = require('../models');
+const { Order, OrderItem, Product, Payment, Coupon, Bundle } = require('../models');
 const emailService = require('./emailService');
 const ApiError = require('../utils/ApiError');
 const { paginate } = require('../utils/helpers');
@@ -17,23 +17,31 @@ class OrderService {
 
     try {
       // 1. Validate products and calculate total
-      let totalPrice = 0;
+      let subtotalBeforeDiscounts = 0;
       const orderItems = [];
+      const bundleCheckItems = []; // For bundle calculation
 
       for (const item of items) {
-        const product = await Product.findByPk(item.productId, { transaction });
+        const product = await Product.findByPk(item.productId, { 
+          transaction,
+          attributes: ['id', 'name', 'price', 'active', 'stock', 'sizeStock', 'categoryId']
+        });
 
         if (!product || !product.active) {
           throw ApiError.badRequest(`Producto no encontrado: ${item.productId}`);
         }
 
         // Check stock availability (not decrementing yet)
-        if (product.stock < item.quantity) {
+        if (item.size && product.sizeStock && product.sizeStock[item.size] !== undefined) {
+          if (product.sizeStock[item.size] < item.quantity) {
+            throw ApiError.badRequest(`Stock insuficiente para "${product.name}" talle ${item.size}. Disponible: ${product.sizeStock[item.size]}`);
+          }
+        } else if (product.stock < item.quantity) {
           throw ApiError.badRequest(`Stock insuficiente para "${product.name}". Disponible: ${product.stock}`);
         }
 
         const itemPrice = parseFloat(product.price);
-        totalPrice += itemPrice * item.quantity;
+        subtotalBeforeDiscounts += itemPrice * item.quantity;
 
         orderItems.push({
           productId: product.id,
@@ -41,11 +49,74 @@ class OrderService {
           price: itemPrice,
           size: item.size || null,
         });
+
+        // Add to bundle check
+        bundleCheckItems.push({
+          productId: product.id,
+          categoryId: product.categoryId,
+          price: itemPrice,
+          quantity: item.quantity
+        });
       }
 
-      // 2. Apply coupon if provided
-      let discount = 0;
+      // 2. Calculate Bundle Discounts
+      let bundleDiscount = 0;
+      const activeBundles = await Bundle.findAll({ 
+        where: { active: true },
+        transaction
+      });
+
+      if (activeBundles.length > 0) {
+        // Sort bundles by discount percentage (highest first)
+        const sortedBundles = [...activeBundles].sort((a, b) => b.discountPercentage - a.discountPercentage);
+        
+        let tempItems = bundleCheckItems.map(i => ({ ...i }));
+
+        for (const bundle of sortedBundles) {
+          const requirements = [
+            ...(bundle.productIds || []).map(id => ({ type: 'product', id })),
+            ...(bundle.categoryIds || []).map(id => ({ type: 'category', id }))
+          ];
+          
+          if (requirements.length === 0) continue;
+
+          while (true) {
+            let satisfied = true;
+            let usedIndices = [];
+            let currentIterationPrice = 0;
+            
+            for (const req of requirements) {
+              let foundIndex = -1;
+              if (req.type === 'product') {
+                foundIndex = tempItems.findIndex(i => i.productId === req.id && i.quantity > 0);
+              } else {
+                foundIndex = tempItems.findIndex(i => i.categoryId === req.id && i.quantity > 0);
+              }
+              
+              if (foundIndex === -1) {
+                satisfied = false;
+                break;
+              } else {
+                tempItems[foundIndex].quantity -= 1;
+                usedIndices.push(foundIndex);
+                currentIterationPrice += tempItems[foundIndex].price;
+              }
+            }
+            
+            if (satisfied) {
+              bundleDiscount += (currentIterationPrice * (bundle.discountPercentage / 100));
+            } else {
+              usedIndices.forEach(idx => { tempItems[idx].quantity += 1; });
+              break;
+            }
+          }
+        }
+      }
+
+      // 3. Apply coupon if provided
+      let couponDiscount = 0;
       let couponId = null;
+      let totalAfterBundles = subtotalBeforeDiscounts - bundleDiscount;
 
       if (couponCode) {
         const coupon = await Coupon.findOne({
@@ -71,23 +142,23 @@ class OrderService {
         }
 
         // Check min purchase
-        if (coupon.minPurchase && totalPrice < parseFloat(coupon.minPurchase)) {
+        if (coupon.minPurchase && totalAfterBundles < parseFloat(coupon.minPurchase)) {
           throw ApiError.badRequest(`Compra mínima requerida: $${coupon.minPurchase}`);
         }
 
         // Calculate discount
         if (coupon.type === 'percentage') {
-          discount = totalPrice * (parseFloat(coupon.value) / 100);
+          couponDiscount = totalAfterBundles * (parseFloat(coupon.value) / 100);
         } else {
-          discount = parseFloat(coupon.value);
+          couponDiscount = parseFloat(coupon.value);
         }
 
         // Discount can't exceed total
-        discount = Math.min(discount, totalPrice);
+        couponDiscount = Math.min(couponDiscount, totalAfterBundles);
         couponId = coupon.id;
       }
 
-      // 3. Calculate shipping cost (always 0 - coordinated via WhatsApp)
+      // 4. Calculate shipping cost (always 0 - coordinated via WhatsApp)
       let shippingCost = 0;
       let finalShippingAddress = shippingAddress || {};
       
@@ -101,9 +172,9 @@ class OrderService {
         };
       }
       
-      const finalTotal = totalPrice - discount + shippingCost;
+      const finalTotal = totalAfterBundles - couponDiscount + shippingCost;
 
-      // 4. Create order
+      // 5. Create order
       const order = await Order.create(
         {
           userId,
@@ -113,12 +184,12 @@ class OrderService {
           shippingCost,
           shippingMethod: method,
           couponId,
-          discount,
+          discount: bundleDiscount + couponDiscount, // Total discount is sum of both
         },
         { transaction }
       );
 
-      // 5. Create order items
+      // 6. Create order items
       const itemsWithOrderId = orderItems.map((item) => ({
         ...item,
         orderId: order.id,
@@ -126,7 +197,7 @@ class OrderService {
 
       await OrderItem.bulkCreate(itemsWithOrderId, { transaction });
 
-      // 6. Increment coupon usage
+      // 7. Increment coupon usage
       if (couponId) {
         await Coupon.increment('usedCount', {
           by: 1,
@@ -287,21 +358,42 @@ class OrderService {
 
       // Decrement stock
       for (const item of items) {
-        const [affectedRows] = await Product.update(
-          { stock: sequelize.literal(`stock - ${item.quantity}`) },
-          {
-            where: {
-              id: item.productId,
-              stock: { [Op.gte]: item.quantity },
-            },
-            transaction,
-          }
-        );
+        // Lock the product row to prevent race conditions
+        const product = await Product.findByPk(item.productId, { transaction, lock: true });
 
-        if (affectedRows === 0) {
+        if (!product) {
           await transaction.rollback();
-          await order.update({ status: 'cancelled' }, { transaction });
-          throw ApiError.badRequest(`Stock insuficiente para completar el pago`);
+          throw ApiError.notFound(`Producto no encontrado: ${item.productId}`);
+        }
+
+        // 1. If size is specified and exists in sizeStock, decrement from there
+        if (item.size && product.sizeStock && product.sizeStock[item.size] !== undefined) {
+          if (product.sizeStock[item.size] < item.quantity) {
+            await transaction.rollback();
+            throw ApiError.badRequest(`Stock insuficiente para "${product.name}" talle ${item.size}`);
+          }
+
+          const newSizeStock = { ...product.sizeStock };
+          newSizeStock[item.size] -= item.quantity;
+          
+          // Also keep total stock updated for backward compatibility/stats
+          const newTotalStock = Math.max(0, product.stock - item.quantity);
+
+          await product.update({
+            sizeStock: newSizeStock,
+            stock: newTotalStock
+          }, { transaction });
+        } 
+        // 2. Fallback to global stock if no size or no sizeStock configured
+        else {
+          if (product.stock < item.quantity) {
+            await transaction.rollback();
+            throw ApiError.badRequest(`Stock insuficiente para "${product.name}"`);
+          }
+
+          await product.update({
+            stock: product.stock - item.quantity
+          }, { transaction });
         }
       }
 

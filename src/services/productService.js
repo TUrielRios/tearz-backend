@@ -13,9 +13,11 @@ class ProductService {
     const where = {};
     const include = [];
 
-    // Filter by active (default: only active for public)
-    if (active !== undefined) {
-      where.active = active;
+    // Filter by active
+    if (active === 'all') {
+      // Don't add active filter
+    } else if (active !== undefined) {
+      where.active = active === 'true' || active === true;
     } else {
       where.active = true;
     }

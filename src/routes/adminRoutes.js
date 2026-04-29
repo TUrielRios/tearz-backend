@@ -5,6 +5,7 @@ const adminController = require('../controllers/adminController');
 const siteContentController = require('../controllers/siteContentController');
 const journalController = require('../controllers/journalController');
 const uploadController = require('../controllers/uploadController');
+const bundleController = require('../controllers/bundleController');
 const { upload } = require('../config/cloudinary');
 
 const router = Router();
@@ -39,5 +40,11 @@ router.delete('/journals/:id', journalController.remove);
 
 // Image upload (Cloudinary)
 router.post('/upload', upload.array('images', 10), uploadController.uploadImages);
+
+// Bundles (Combos)
+router.get('/bundles', bundleController.getAllBundles);
+router.post('/bundles', bundleController.createBundle);
+router.put('/bundles/:id', bundleController.updateBundle);
+router.delete('/bundles/:id', bundleController.deleteBundle);
 
 module.exports = router;
