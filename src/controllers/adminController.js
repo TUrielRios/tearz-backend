@@ -1,4 +1,5 @@
-const { Order, OrderItem, Product, User, Category } = require('../models');
+const { Order, OrderItem, Product, User, Category, Payment } = require('../models');
+const orderService = require('../services/orderService');
 const { asyncHandler } = require('../utils/helpers');
 const { Op, fn, col, literal } = require('sequelize');
 
@@ -101,6 +102,7 @@ const getAllOrders = asyncHandler(async (req, res) => {
         model: OrderItem, as: 'items',
         include: [{ model: Product, as: 'product', attributes: ['id', 'name', 'images'] }],
       },
+      { model: Payment, as: 'payment', attributes: ['id', 'status', 'provider'] },
     ],
     order: [['createdAt', 'DESC']],
     offset,
@@ -108,10 +110,25 @@ const getAllOrders = asyncHandler(async (req, res) => {
     distinct: true,
   });
 
+  // 🔄 Auto-sync: Marcar órdenes pendientes con pago aprobado como 'paid'
+  // Esto corrige el caso donde el webhook no llegó pero el pago está aprobado
+  const pendingOrders = rows.filter(o => o.status === 'pending' && o.payment?.status === 'approved');
+  for (const order of pendingOrders) {
+    try {
+      await orderService.processApprovedPayment(order.id);
+      console.log(`✅ Auto-sync: Orden ${order.id} marcada como PAID (pago aprobado detectado)`);
+    } catch (error) {
+      console.error(`❌ Error auto-sync orden ${order.id}:`, error.message);
+    }
+  }
+
+  // Remover el campo payment del resultado para no exponerlo al frontend (opcional)
+  const ordersWithoutPayment = rows.map(({ payment, ...rest }) => rest);
+
   res.json({
     success: true,
     data: {
-      orders: rows,
+      orders: ordersWithoutPayment,
       pagination: {
         page: parseInt(page, 10),
         limit: parseInt(limit, 10),

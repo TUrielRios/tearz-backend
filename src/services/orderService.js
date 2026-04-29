@@ -246,7 +246,8 @@ class OrderService {
   }
 
   /**
-   * Process approved payment — decrement stock
+   * Process approved payment — decrement stock and mark order as paid
+   * Idempotent: safe to call multiple times
    */
   async processApprovedPayment(orderId) {
     const order = await Order.findByPk(orderId, {
@@ -254,6 +255,12 @@ class OrderService {
     });
 
     if (!order) throw ApiError.notFound('Orden no encontrada');
+
+    // If already paid, no need to process again
+    if (order.status === 'paid') {
+      console.log(`⚠️ Orden ${orderId} ya estaba marcada como PAID - omitiendo`);
+      return order;
+    }
 
     const transaction = await sequelize.transaction();
 
@@ -273,7 +280,7 @@ class OrderService {
         if (affectedRows === 0) {
           // Not enough stock — cancel the order
           await transaction.rollback();
-          await order.update({ status: 'cancelled' });
+          await order.update({ status: 'cancelled' }, { transaction });
           throw ApiError.badRequest(`Stock insuficiente para completar el pago`);
         }
       }
