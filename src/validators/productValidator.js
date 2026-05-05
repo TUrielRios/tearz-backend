@@ -3,16 +3,16 @@ const { z } = require('zod');
 const createProductSchema = z.object({
   name: z.string().min(1, 'El nombre es requerido'),
   description: z.string().optional(),
-  price: z.number().positive('El precio debe ser positivo'),
-  oldPrice: z.number().positive().nullable().optional(),
-  stock: z.number().int().min(0).default(0),
-  images: z.array(z.string().url()).default([]),
+  price: z.coerce.number().positive('El precio debe ser positivo'),
+  oldPrice: z.coerce.number().positive().nullable().optional(),
+  stock: z.coerce.number().int().min(0).default(0),
+  images: z.array(z.string()).default([]),
   colors: z.array(z.string()).default([]),
   sizes: z.array(z.string()).default([]),
   badge: z.string().nullable().optional(),
   active: z.boolean().default(true),
-  categoryId: z.string().uuid().nullable().optional(),
-  sizeStock: z.record(z.string(), z.number()).optional(),
+  categoryId: z.preprocess((val) => (val === '' ? null : val), z.string().uuid().nullable().optional()),
+  sizeStock: z.record(z.string(), z.coerce.number().int().min(0)).optional(),
 });
 
 const updateProductSchema = createProductSchema.partial();
