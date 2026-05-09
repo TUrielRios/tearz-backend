@@ -17,6 +17,11 @@ const Category = sequelize.define('Category', {
     allowNull: false,
     unique: true,
   },
+  isAccessory: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false,
+    field: 'is_accessory',
+  },
 }, {
   tableName: 'categories',
   hooks: {

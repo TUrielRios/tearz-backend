@@ -24,6 +24,14 @@ const start = async () => {
       console.error('⚠️ Error agregando columna category_ids:', err.message);
     }
 
+    // Manual migration for is_accessory column in Categories table
+    try {
+      await sequelize.query('ALTER TABLE categories ADD COLUMN IF NOT EXISTS is_accessory BOOLEAN DEFAULT false;');
+      console.log('✅ Columna is_accessory verificada/agregada');
+    } catch (err) {
+      console.error('⚠️ Error agregando columna is_accessory:', err.message);
+    }
+
     // Sync models (dev only — en producción usar migraciones)
     if (config.env === 'development') {
       await sequelize.sync({ alter: false });

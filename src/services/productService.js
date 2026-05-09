@@ -7,7 +7,7 @@ class ProductService {
   /**
    * List products with pagination, filters, search, and sort
    */
-  async list({ page, limit, category, search, minPrice, maxPrice, sort, active }) {
+  async list({ page, limit, category, search, minPrice, maxPrice, sort, active, ids, isAccessory }) {
     page = parseInt(page, 10) || 1;
     limit = parseInt(limit, 10) || 20;
     const where = {};
@@ -21,20 +21,39 @@ class ProductService {
     } else {
       where.active = true;
     }
+    
+    // Filter by IDs
+    if (ids) {
+      const idList = Array.isArray(ids) ? ids : String(ids).split(',');
+      where.id = { [Op.in]: idList };
+    }
 
-    // Filter by category slug
+    // Filter by category or isAccessory
     if (category) {
       include.push({
         model: Category,
         as: 'category',
         where: { slug: category },
-        attributes: ['id', 'name', 'slug'],
+        attributes: ['id', 'name', 'slug', 'isAccessory'],
       });
+    } else if (ids && String(ids).includes(',')) {
+       // Don't force category filter if we are fetching multiple specific IDs
+       include.push({
+         model: Category,
+         as: 'category',
+         attributes: ['id', 'name', 'slug', 'isAccessory'],
+       });
     } else {
+      const categoryWhere = {};
+      if (isAccessory !== undefined) {
+        categoryWhere.isAccessory = isAccessory === 'true' || isAccessory === true;
+      }
+      
       include.push({
         model: Category,
         as: 'category',
-        attributes: ['id', 'name', 'slug'],
+        where: Object.keys(categoryWhere).length > 0 ? categoryWhere : undefined,
+        attributes: ['id', 'name', 'slug', 'isAccessory'],
       });
     }
 

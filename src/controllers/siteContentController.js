@@ -9,6 +9,7 @@ const getAll = asyncHandler(async (req, res) => {
   const content = {};
   items.forEach(item => { content[item.key] = item.value; });
 
+  console.log("DEBUG: SiteContent.getAll returning keys:", Object.keys(content));
   res.json({ success: true, data: { content } });
 });
 
